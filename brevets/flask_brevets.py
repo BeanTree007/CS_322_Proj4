@@ -1,12 +1,7 @@
-"""
-Replacement for RUSA ACP brevet time calculator
-(see https://rusa.org/octime_acp.html)
-
-"""
+"""Flask application for the ACP brevet control time calculator."""
 
 import flask
 from flask import request
-import arrow  # Replacement for datetime, based on moment.js
 import acp_times  # Brevet time calculations
 import config
 
@@ -16,7 +11,7 @@ import logging
 # Globals
 ###
 app = flask.Flask(__name__)
-CONFIG = config.configuration()
+CONFIG = config.configuration(proxied=__name__ != "__main__")
 app.secret_key = CONFIG.SECRET_KEY
 
 ###
@@ -27,14 +22,11 @@ app.secret_key = CONFIG.SECRET_KEY
 @app.route("/")
 @app.route("/index")
 def index():
-    app.logger.debug("Main page entry")
     return flask.render_template('calc.html')
 
 
 @app.errorhandler(404)
 def page_not_found(error):
-    app.logger.debug("Page not found")
-    flask.session['linkback'] = flask.url_for("index")
     return flask.render_template('404.html'), 404
 
 
@@ -47,25 +39,31 @@ def page_not_found(error):
 @app.route("/_calc_times")
 def _calc_times():
     """
-    Calculates open/close times from miles, using rules
-    described at https://rusa.org/octime_alg.html.
-    Expects one URL-encoded argument, the number of miles.
+    Calculate control times from kilometers, brevet distance, and start time.
+    Expects URL-encoded km, brevet_dist_km, and start_time arguments.
     """
-    app.logger.debug("Got a JSON request")
-    km = request.args.get('km', 999, type=float)
-    app.logger.debug("km={}".format(km))
-    app.logger.debug("request.args: {}".format(request.args))
-    # FIXME: These probably aren't the right open and close times
-    # and brevets may be longer than 200km
-    open_time = acp_times.open_time(km, 200, arrow.now().isoformat)
-    close_time = acp_times.close_time(km, 200, arrow.now().isoformat)
-    result = {"open": open_time, "close": close_time}
+    km = request.args.get("km")
+    brevet_distance = request.args.get("brevet_dist_km")
+    start_time = request.args.get("start_time")
+    if not km or not brevet_distance or not start_time:
+        response = flask.jsonify(
+            error="km, brevet_dist_km, and start_time are required"
+        )
+        return response, 400
+
+    try:
+        result = {
+            "open": acp_times.open_time(km, brevet_distance, start_time),
+            "close": acp_times.close_time(km, brevet_distance, start_time),
+        }
+    except ValueError as error:
+        return flask.jsonify(error=str(error)), 400
     return flask.jsonify(result=result)
 
 
 #############
 
-app.debug = CONFIG.DEBUG
+app.debug = getattr(CONFIG, "DEBUG", False)
 if app.debug:
     app.logger.setLevel(logging.DEBUG)
 

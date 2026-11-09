@@ -17,7 +17,7 @@
     src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js">
    </script>
 
-  <!-- moment.js is the JavaScript equivalent of arrow.py -->
+  <!-- Moment.js formats the returned ISO date-times. -->
   <script 
     src="{{ url_for('static', filename="js/moment.min.js") }}"></script>
 
@@ -117,56 +117,75 @@
   var SCRIPT_ROOT = {{ request.script_root|tojson|safe }} ;
   var TIME_CALC_URL = SCRIPT_ROOT + "/_calc_times";
 
-  // Pass calctimes a <td> element containing the data for a control.
-  // It extracts the distance and calls the server to get times to
-  // fill in open and close times in a human-readable format.
-  // (If we want to also keep the ISO-formatted times, we'll need to
-  // stash them in hidden fields.) 
   function calc_times(control) {
-    var km = control.find("input[name='km']").val();
+    var km = control.find("input[name='km']").val().trim();
     var open_time_field = control.find("input[name='open']");
     var close_time_field = control.find("input[name='close']");
-    
-    $.getJSON(TIME_CALC_URL, { km: km }, 
-      // response handler
-      function(data) {
-         var times = data.result;
-         console.log("Got a response: " +  times);
-         console.log("Response.open = " + times.open);
-         open_time_field.val( moment(times.open).format("ddd M/D H:mm"));
-         close_time_field.val( moment(times.close).format("ddd M/D H:mm"));
-       } // end of handler function
-     );// End of getJSON
+    var notes = control.find(".notes");
+    var pending_request = control.data("timeRequest");
+
+    if (pending_request) {
+      pending_request.abort();
     }
 
-  $(document).ready(function(){
-   // Do the following when the page is finished loading
+    if (!km) {
+      open_time_field.val("");
+      close_time_field.val("");
+      notes.text("");
+      return;
+    }
 
-      $('input[name="miles"]').change(
-         function() {
-             var miles = parseFloat($(this).val());
-             var km = (1.609344 * miles).toFixed(1) ;
-             console.log("Converted " + miles + " miles to " + km + " kilometers");
-             var control_entry = $(this).parents(".control")
-             var target = control_entry.find("input[name='km']");
-             target.val( km );
-             // Then calculate times for this entry
-             calc_times(control_entry);
-          });
+    open_time_field.val("");
+    close_time_field.val("");
+    notes.text("");
+    pending_request = $.getJSON(TIME_CALC_URL, {
+      km: km,
+      brevet_dist_km: $("#brevet_dist_km").val(),
+      start_time: $("#begin_date").val() + "T" + $("#begin_time").val()
+    }).done(function(data) {
+      open_time_field.val(moment(data.result.open).format("ddd M/D HH:mm"));
+      close_time_field.val(moment(data.result.close).format("ddd M/D HH:mm"));
+    }).fail(function(xhr, status) {
+      if (status === "abort") {
+        return;
+      }
+      var message = xhr.responseJSON && xhr.responseJSON.error;
+      notes.text(message || "Unable to calculate control times.");
+    });
+    control.data("timeRequest", pending_request);
+  }
 
-      $('input[name="km"]').change(
-         function() {
-             var km = parseFloat($(this).val());
-             var miles = (0.621371 * km).toFixed(1) ;
-             console.log("Converted " + km + " km to " + miles + " miles");
-             var control_entry = $(this).parents(".control")
-             var target = control_entry.find("input[name='miles']");
-             target.val( miles );
-             // Then calculate times for this entry
-             calc_times(control_entry);
-          });
+  function update_all_times() {
+    $(".control").each(function() {
+      calc_times($(this));
+    });
+  }
 
-     });   // end of what we do on document ready
+  $(document).ready(function() {
+    $('input[name="miles"]').on("input change", function() {
+      var miles = parseFloat($(this).val());
+      var control = $(this).parents(".control");
+      if (!Number.isFinite(miles) || miles < 0) {
+        control.find("input[name='km']").val("");
+      } else {
+        control.find("input[name='km']").val((1.609344 * miles).toFixed(6));
+      }
+      calc_times(control);
+    });
+
+    $('input[name="km"]').on("input change", function() {
+      var km = parseFloat($(this).val());
+      var control = $(this).parents(".control");
+      if (!Number.isFinite(km) || km < 0) {
+        control.find("input[name='miles']").val("");
+      } else {
+        control.find("input[name='miles']").val((0.621371 * km).toFixed(1));
+      }
+      calc_times(control);
+    });
+
+    $("#brevet_dist_km, #begin_date, #begin_time").on("input change", update_all_times);
+  });
 
 </script>
 

@@ -1,74 +1,97 @@
-# Project 4: Brevet time calculator with Ajax
+# ACP Brevet Control Time Calculator
 
-Reimplement the RUSA ACP controle time calculator with flask and ajax.
+A small Flask application that calculates opening and closing times for
+controls on ACP-sanctioned brevets. Enter a control distance in kilometers or
+miles; the calculator requests the times from Flask and updates the row without
+reloading the page.
 
-Credits to Michal Young for the initial version of this code.
+## Usage
 
-## ACP controle times
+The calculator supports nominal brevet distances of 200, 300, 400, 600, and
+1000 km. Set the brevet distance and start date/time, then enter control
+distances. The kilometer and mile fields convert each other automatically.
+Open and close times are shown in the start date/time's local wall-clock time.
+The location field is optional.
 
-That's "controle" with an 'e', because it's French, although "control" is also accepted. Controls are points where a rider must obtain proof of passage, and control[e] times are the minimum and maximum times by which the rider must arrive at the location.   
+## Installation and running
 
-The algorithm for calculating controle times is described here (https://rusa.org/pages/acp-brevet-control-times-calculator). Additional background information is given here (https://rusa.org/pages/rulesForRiders). The description is ambiguous, but the examples help. Part of finishing this project is clarifying anything that is not clear about the requirements, and documenting it clearly.  
+From the `brevets` directory, install the dependencies and start the app:
 
-We are essentially replacing the calculator here (https://rusa.org/octime_acp.html). We can also use that calculator to clarify requirements and develop test data.  
+```bash
+python -m pip install -r requirements.txt
+python flask_brevets.py
+```
 
-## AJAX and Flask reimplementation
+This project is tested with Python 3.9 because Nose 1.3.7 is not compatible
+with newer Python releases.
 
-The RUSA controle time calculator is a Perl script that takes an HTML form and emits a text page in the above link. 
+Open `http://localhost:5000` in a browser. The Flask development server binds
+to all interfaces, which is useful when running in a container.
 
-The implementation that you will do will fill in times as the input fields are filled using Ajax and Flask. Currently the miles to km (and vice versa) is implemented with Ajax. You'll extend that functionality as follows:
+## ACP control time calculations
 
-* Each time a distance is filled in, the corresponding open and close times should be filled in with Ajax.   
+Calculations follow the [RUSA ACP Brevet Control Times Calculator
+description](https://rusa.org/pages/acp-brevet-control-times-calculator). The
+backend accepts a control distance in kilometers, truncates it to whole
+kilometers, and caps it at the nominal brevet distance. Thus, for example, a
+205 km route's finish on a 200 km brevet is calculated at 200 km. Calculated
+times are rounded to the nearest minute and added to the specified brevet
+start time.
 
-* You'll also implement the logic in acp_times.py based on the algorithm given above. I will leave much of the design to you. You'll turn the implementation that you do. See below for more information.
+Opening times use the maximum speeds for successive distance segments:
+
+| Segment | Maximum speed |
+| --- | ---: |
+| First 200 km | 34 km/h |
+| 200–400 km | 32 km/h |
+| 400–600 km | 30 km/h |
+| Beyond 600 km | 28 km/h |
+
+For example, the opening time at 350 km is `200/34 + 150/32`, or 10 hours 34
+minutes after the start.
+
+Closing times use a minimum speed of 15 km/h through 600 km and 11.428 km/h
+after 600 km. RUSA's relaxed close-time rule applies below 60 km: the close
+time is `distance/20 + 1 hour`. At 60 km and beyond, the standard minimum-speed
+calculation applies. The start control at 0 km therefore closes one hour after
+the start. At the nominal brevet finish, the official overall limits take
+precedence: 13h30 for 200 km, 20h for 300 km, 27h for 400 km, 40h for 600 km,
+and 75h for 1000 km.
+
+## Development
+
+`acp_times.py` contains the standalone open/close calculations. The Flask
+endpoint `/_calc_times` receives the control distance, selected brevet
+distance, and start date/time and returns a JSON object with `open` and
+`close` ISO date-times. `templates/calc.html` handles distance conversion,
+AJAX requests, and display updates. No database or additional application
+framework is used.
 
 ## Testing
 
-A suite of nose test cases is a requirement of this project. Design the test cases based on an interpretation of rules here (https://rusa.org/pages/acp-brevet-control-times-calculator). Be sure to test your test cases: You can use the current brevet time calculator (https://rusa.org/octime_acp.html) to check that your expected test outputs are correct. While checking these values once is a manual operation, re-running your test cases should be automated in the usual manner as a Nose test suite.
+From the `brevets` directory, run the Nose suite:
 
-To make automated testing more practical, your open and close time calculations should be in a separate module. Because I want to be able to use my test suite as well as yours, I will require that module be named acp_times.py and contain the two functions I have included in the skeleton code (though revised, of course, to return correct results).
+```bash
+nosetests
+```
 
-We should be able to run your test suite by changing to the "brevets" directory and typinng "nosetests". All tests should pass. You should have at least 5 test cases, and more importantly, your test cases should be chosen to distinguish between an implementation that correctly interprets the ACP rules and one that does not.
+Tests cover RUSA examples, each finish-time limit, early controls, speed-band
+boundaries, over-distance finishes, kilometer truncation, and the Flask JSON
+endpoint.
 
-## Replace this README
+## Docker
 
-This README is currently written primarily as instructions to CIS 322 students. Replace it with a proper README for an ACP time calculator. Think about what should be included for users and for developers. If it is growing too long, factor details into one or more separate documents, with references from the README. At the end, add your details.
+From the `brevets` directory, build and run the existing image configuration:
 
-## Tasks
+```bash
+docker build -t acp-brevet-calculator .
+docker run --rm -p 5000:5000 acp-brevet-calculator
+```
 
-The code under "brevets" can serve as a starting point. It illustrates a very simple Ajax transaction between the Flask server and javascript on the web page. At present the server does not calculate times. It just returns double the number of miles. Other things may be missing; add them as needed. As before, you should fork and then clone the bitbucket repository, make your changes, and turn in the URL of your repository.
+Then open `http://localhost:5000`.
 
-You'll turn in your credentials.ini using which we will get the following:
+## Author
 
-* The working application.
-
-* A README.md file that includes not only identifying information (your name, email, etc.) but but also a revised, clear specification of the brevet controle time calculation rules.
-
-* An automated 'nose' test suite.
-
-* Dockerfile
-
-## Grading Rubric
-
-* If your code works as expected: 100 points. This includes:
-	* AJAX in the frontend. That is, open and close times are automatically populated, 
-	* Logic in the backend (acp_times.py), 
-	* Frontend to backend interaction (with correct requests/responses), 
-	* README is updated with a clear specification, and 
-	* All five tests pass.
-
-* If the AJAX logic is not working, 10 points will be docked off. 
-
-* If the README is not clear or missing, up to 15 points will be docked off. 
-
-* If the test cases fail, up to 15 points will be docked off. 
-
-* If the logic in the acp_times.py file is wrong or is missing in the appropriate location, 30 points will be docked off.
-
-* If none of the functionalities work, 30 points will be given assuming 
-    * The credentials.ini is submitted with the correct URL of your repo, and
-    * The Dockerfile builds without any errors
-    
-* If the Dockerfile doesn't build or is missing, 10 points will be docked off.
-
-* If credentials.ini is missing, 0 will be assigned.
+Banyan Jullian
+bjullian@uoregon.edu
+https://github.com/BeanTree007/CS_322_Proj4.git
